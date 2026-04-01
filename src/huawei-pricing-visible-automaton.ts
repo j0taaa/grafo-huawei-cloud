@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { chromium, type Locator, type Page } from "playwright";
+import { chromium, type Browser, type Page } from "playwright";
 import { instance } from "@viz-js/viz";
 import {
   calculatorUrlForService,
@@ -9,24 +9,32 @@ import {
   dismissCalculatorOverlays,
   readOpenTinySelectDropdownOptions,
 } from "./huawei-ecs-calculator-options.js";
+import {
+  applyCalculatorFormAction,
+  calculatorFormSignature,
+  extractCalculatorFormControls,
+  mapWithConcurrency,
+  readCalculatorFormQuickSignature,
+  type CalculatorFormAction,
+  type CalculatorFormControl,
+} from "./huawei-calculator-form-state.js";
 
 const OUTPUT_DIR = path.resolve("playwright-output");
 
-type VisibleControl = {
-  label: string;
-  options: string[];
-};
-
-type Action = {
-  label: string;
-  option: string;
-};
+const VISIBLE_CONCURRENCY = Number(process.env.HUAWEI_VISIBLE_AUTOMATON_CONCURRENCY ?? "4");
+const MAX_STATES = (() => {
+  const raw = process.env.HUAWEI_VISIBLE_AUTOMATON_MAX_STATES?.trim();
+  if (!raw) return Number.POSITIVE_INFINITY;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : Number.POSITIVE_INFINITY;
+})();
 
 type StateNode = {
   id: string;
   signature: string;
-  controls: VisibleControl[];
-  path: Action[];
+  quickSignature: string;
+  controls: CalculatorFormControl[];
+  path: CalculatorFormAction[];
 };
 
 type Edge = {
@@ -45,14 +53,6 @@ type Automaton = {
 
 function normalizeText(raw: string | null | undefined): string {
   return (raw ?? "").replace(/\s+/g, " ").trim();
-}
-
-function canonicalizeOption(label: string, option: string): string {
-  const text = normalizeText(option);
-  if (label === "Required Duration") {
-    return text.replace(/ months?$/i, "").replace(/^1 month$/i, "1");
-  }
-  return text;
 }
 
 function canonicalizeLabel(label: string): string {
@@ -94,7 +94,7 @@ function includeSingletonControls(): boolean {
 
 async function waitReady(page: Page): Promise<void> {
   await page.getByRole("tab", { name: "Price Calculator" }).waitFor({ timeout: 30_000 });
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(180);
   await dismissCalculatorOverlays(page);
   await defaultCalculatorFormRoot(page).waitFor({ timeout: 30_000 });
 }
@@ -162,189 +162,152 @@ async function setFixedRegion(page: Page, region: string | null): Promise<void> 
       throw new Error(`Region "${region}" not available.`);
     }
     await selectDropdownOption(page, region);
-    await page.waitForTimeout(700);
+    await page.waitForTimeout(320);
     return;
   }
 }
 
-async function openConfiguredPage(service: string, region: string | null): Promise<{ page: Page; browser: Awaited<ReturnType<typeof chromium.launch>> }> {
-  const browser = await chromium.launch({
-    headless: process.argv.includes("--headed") ? false : true,
-  });
+async function openCalculatorSession(
+  browser: Browser,
+  service: string,
+  region: string | null,
+): Promise<Page> {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1200 } });
   await page.goto(calculatorUrlForService(service), { waitUntil: "domcontentloaded" });
   await waitReady(page);
   await setFixedRegion(page, region);
-  await page.waitForTimeout(2500);
-  return { page, browser };
+  await page.waitForTimeout(450);
+  return page;
 }
 
-async function extractVisibleControls(
-  page: Page,
-  ignoreLabels: Set<string>,
-  includeSingletonsFlag: boolean,
-): Promise<VisibleControl[]> {
-  const root = defaultCalculatorFormRoot(page);
-  const items = root.locator(".tiny-form-item");
-  const count = await items.count();
-  const controls: VisibleControl[] = [];
-
-  for (let i = 0; i < count; i++) {
-    const item = items.nth(i);
-    if (!(await item.isVisible().catch(() => false))) continue;
-
-    const label = canonicalizeLabel(
-      await item.locator(".tiny-form-item__label").first().innerText().catch(() => ""),
-    );
-    if (ignoreLabels.has(label)) continue;
-
-    const group = item.locator(".tiny-button-group").first();
-    if ((await group.count()) === 0) continue;
-
-    const buttons = group.locator("button");
-    const buttonCount = await buttons.count();
-    const options: string[] = [];
-    for (let j = 0; j < buttonCount; j++) {
-      const button = buttons.nth(j);
-      if (!(await button.isVisible().catch(() => false))) continue;
-      const text = canonicalizeOption(label, await button.innerText().catch(() => ""));
-      if (text) options.push(text);
-    }
-
-    if (!includeSingletonsFlag && options.length <= 1) continue;
-    if (options.length === 0) continue;
-
-    controls.push({ label, options });
-  }
-
-  return controls;
-}
-
-function signatureForControls(controls: VisibleControl[]): string {
-  return JSON.stringify(
-    controls.map((control) => ({
-      label: control.label,
-      options: control.options,
-    })),
-  );
-}
-
-async function clickAction(page: Page, action: Action): Promise<void> {
-  const items = defaultCalculatorFormRoot(page).locator(".tiny-form-item");
-  const count = await items.count();
-
-  for (let i = 0; i < count; i++) {
-    const item = items.nth(i);
-    const label = canonicalizeLabel(
-      await item.locator(".tiny-form-item__label").first().innerText().catch(() => ""),
-    );
-    if (label !== action.label) continue;
-
-    const buttons = item.locator(".tiny-button-group button");
-    const buttonCount = await buttons.count();
-    for (let j = 0; j < buttonCount; j++) {
-      const button = buttons.nth(j);
-      if (!(await button.isVisible().catch(() => false))) continue;
-      const text = canonicalizeOption(label, await button.innerText().catch(() => ""));
-      if (text !== action.option) continue;
-      await button.click();
-      await page.waitForTimeout(700);
-      return;
+function buildCandidateActions(controls: CalculatorFormControl[]): CalculatorFormAction[] {
+  const actions: CalculatorFormAction[] = [];
+  for (const control of controls) {
+    if (control.options.length <= 1) continue;
+    for (const option of control.options) {
+      if (control.current && option === control.current) continue;
+      actions.push({
+        rowIndex: control.rowIndex,
+        kind: control.kind,
+        label: control.label,
+        option,
+      });
     }
   }
-
-  throw new Error(`Could not find action ${action.label}=${action.option}`);
+  return actions;
 }
 
-async function captureState(
+function actionDisplay(action: CalculatorFormAction): string {
+  const lab = action.label || `row-${action.rowIndex}`;
+  return `${lab}=${action.option}`;
+}
+
+async function captureStateForPath(
+  browser: Browser,
   service: string,
   region: string | null,
-  path: Action[],
+  path: CalculatorFormAction[],
   ignoreLabels: Set<string>,
-  includeSingletonsFlag: boolean,
-): Promise<VisibleControl[]> {
-  const { page, browser } = await openConfiguredPage(service, region);
+  includeSingletonFlag: boolean,
+): Promise<{
+  controls: CalculatorFormControl[];
+  quickSignature: string;
+}> {
+  const page = await openCalculatorSession(browser, service, region);
   try {
     for (const action of path) {
-      await clickAction(page, action);
+      await applyCalculatorFormAction(page, action);
     }
-    return await extractVisibleControls(page, ignoreLabels, includeSingletonsFlag);
+    const controls = await extractCalculatorFormControls(page, {
+      ignoreLabels,
+      includeSingletonButtonGroups: includeSingletonFlag,
+    });
+    const quickSignature = await readCalculatorFormQuickSignature(page);
+    return { controls, quickSignature };
   } finally {
-    await browser.close();
+    await page.close().catch(() => undefined);
   }
 }
 
 async function buildVisibleAutomaton(service: string, region: string | null): Promise<Automaton> {
   const ignoreLabels = getIgnoreLabels();
-  const includeSingletonsFlag = includeSingletonControls();
-  const statesBySignature = new Map<string, StateNode>();
-  const queue: string[] = [];
-  const edges = new Map<string, Edge>();
-  let stateCounter = 0;
+  const includeSingletonFlag = includeSingletonControls();
 
-  const initialControls = await captureState(service, region, [], ignoreLabels, includeSingletonsFlag);
-  const initialSignature = signatureForControls(initialControls);
-  const initial: StateNode = {
-    id: `s${stateCounter++}`,
-    signature: initialSignature,
-    controls: initialControls,
-    path: [],
-  };
-  statesBySignature.set(initialSignature, initial);
-  queue.push(initialSignature);
+  const browser = await chromium.launch({
+    headless: process.argv.includes("--headed") ? false : true,
+  });
 
-  while (queue.length) {
-    const signature = queue.shift()!;
-    const state = statesBySignature.get(signature)!;
-    const actions: Action[] = [];
+  try {
+    const statesBySignature = new Map<string, StateNode>();
+    const queue: string[] = [];
+    const edges = new Map<string, Edge>();
+    let stateCounter = 0;
 
-    for (const control of state.controls) {
-      for (const option of control.options) {
-        actions.push({ label: control.label, option });
+    const initial = await captureStateForPath(browser, service, region, [], ignoreLabels, includeSingletonFlag);
+    const initialSig = calculatorFormSignature(initial.controls);
+    const initialNode: StateNode = {
+      id: `s${stateCounter++}`,
+      signature: initialSig,
+      quickSignature: initial.quickSignature,
+      controls: initial.controls,
+      path: [],
+    };
+    statesBySignature.set(initialSig, initialNode);
+    queue.push(initialSig);
+
+    while (queue.length && statesBySignature.size < MAX_STATES) {
+      const signature = queue.shift()!;
+      const state = statesBySignature.get(signature)!;
+      const actions = buildCandidateActions(state.controls);
+
+      const results = await mapWithConcurrency(actions, VISIBLE_CONCURRENCY, async (action) => {
+        const nextPath = [...state.path, action];
+
+        const snap = await captureStateForPath(browser, service, region, nextPath, ignoreLabels, includeSingletonFlag);
+        const nextSig = calculatorFormSignature(snap.controls);
+        if (nextSig === state.signature) return null;
+
+        return { action, snap, nextSig };
+      });
+
+      for (const result of results) {
+        if (!result) continue;
+        if (statesBySignature.size >= MAX_STATES) break;
+
+        let next = statesBySignature.get(result.nextSig);
+        if (!next) {
+          next = {
+            id: `s${stateCounter++}`,
+            signature: result.nextSig,
+            quickSignature: result.snap.quickSignature,
+            controls: result.snap.controls,
+            path: [...state.path, result.action],
+          };
+          statesBySignature.set(result.nextSig, next);
+          queue.push(result.nextSig);
+        }
+
+        const edgeKey = `${state.id}|${next.id}|${actionDisplay(result.action)}`;
+        if (!edges.has(edgeKey)) {
+          edges.set(edgeKey, {
+            from: state.id,
+            to: next.id,
+            action: actionDisplay(result.action),
+          });
+        }
       }
     }
 
-    for (const action of actions) {
-      const controls = await captureState(
-        service,
-        region,
-        [...state.path, action],
-        ignoreLabels,
-        includeSingletonsFlag,
-      );
-      const nextSignature = signatureForControls(controls);
-      if (nextSignature === state.signature) continue;
-
-      let next = statesBySignature.get(nextSignature);
-      if (!next) {
-        next = {
-          id: `s${stateCounter++}`,
-          signature: nextSignature,
-          controls,
-          path: [...state.path, action],
-        };
-        statesBySignature.set(nextSignature, next);
-        queue.push(nextSignature);
-      }
-
-      const edgeKey = `${state.id}|${next.id}|${action.label}=${action.option}`;
-      if (!edges.has(edgeKey)) {
-        edges.set(edgeKey, {
-          from: state.id,
-          to: next.id,
-          action: `${action.label}=${action.option}`,
-        });
-      }
-    }
+    return {
+      service,
+      region,
+      mode: "visible-only",
+      states: [...statesBySignature.values()],
+      edges: [...edges.values()],
+    };
+  } finally {
+    await browser.close();
   }
-
-  return {
-    service,
-    region,
-    mode: "visible-only",
-    states: [...statesBySignature.values()],
-    edges: [...edges.values()],
-  };
 }
 
 function buildDot(automaton: Automaton): string {
@@ -359,7 +322,10 @@ function buildDot(automaton: Automaton): string {
   for (const state of automaton.states) {
     const labelLines = [state.id];
     for (const control of state.controls) {
-      labelLines.push(`${control.label || "(unlabeled)"}: ${control.options.join(" | ")}`);
+      const cur = control.current ? ` [${control.current}]` : "";
+      const opts = control.options.join(" | ");
+      const kind = control.kind === "select" ? "select" : "btn";
+      labelLines.push(`${kind} ${control.label || "(unlabeled)"}${cur}: ${opts}`);
     }
     const label = labelLines.join("\\n").replace(/"/g, '\\"');
     lines.push(`  ${state.id} [label="${label}"];`);

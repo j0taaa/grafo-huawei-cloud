@@ -1,34 +1,27 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { chromium, type Browser, type Locator, type Page } from "playwright";
+import { chromium, type Browser, type Page } from "playwright";
 import {
   calculatorUrlForService,
   defaultCalculatorFormRoot,
   dismissCalculatorOverlays,
   parsePricingServiceSlugFromArgv,
-  readOpenTinySelectDropdownOptions,
 } from "./huawei-ecs-calculator-options.js";
+import {
+  applyCalculatorFormAction,
+  extractCalculatorFormControls,
+  mapWithConcurrency,
+  readCalculatorFormQuickSignature,
+  type CalculatorFormAction,
+  type CalculatorFormControl,
+} from "./huawei-calculator-form-state.js";
 
 const OUTPUT_DIR = path.resolve("playwright-output");
 const DEFAULT_CONCURRENCY = Number(process.env.HUAWEI_AUTOMATON_CONCURRENCY || "4");
 
-type ControlKind = "button-group" | "select";
-
-type ControlState = {
-  rowIndex: number;
-  kind: ControlKind;
-  label: string;
-  current: string | null;
-  options: string[];
-};
-
-type Action = {
-  rowIndex: number;
-  kind: ControlKind;
-  label: string;
-  option: string;
-};
+type ControlState = CalculatorFormControl;
+type Action = CalculatorFormAction;
 
 type AutomatonNode = {
   id: string;
@@ -62,30 +55,6 @@ const MEMORY_CONTROL_LABELS = new Set(
     .filter(Boolean),
 );
 
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  worker: (item: T, index: number) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let nextIndex = 0;
-
-  async function runner(): Promise<void> {
-    while (nextIndex < items.length) {
-      const current = nextIndex++;
-      results[current] = await worker(items[current]!, current);
-    }
-  }
-
-  const width = Math.max(1, Math.min(concurrency, items.length || 1));
-  await Promise.all(Array.from({ length: width }, () => runner()));
-  return results;
-}
-
-function normalizeText(raw: string | null | undefined): string {
-  return (raw ?? "").replace(/\s+/g, " ").trim();
-}
-
 function controlDisplayLabel(control: Pick<ControlState | Action, "label" | "rowIndex">): string {
   return control.label || `row-${control.rowIndex}`;
 }
@@ -101,6 +70,7 @@ function stateSignature(controls: ControlState[], memory: Record<string, string>
         kind: control.kind,
         label: control.label,
         options: control.options,
+        current: control.current ?? "",
       })),
       memory: Object.fromEntries(Object.entries(memory).sort(([a], [b]) => a.localeCompare(b))),
     },
@@ -153,7 +123,7 @@ function updateMemoryForAction(memory: Record<string, string>, action: Action): 
 
 async function waitForCalculatorReady(page: Page): Promise<void> {
   await page.getByRole("tab", { name: "Price Calculator" }).waitFor({ timeout: 30_000 });
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(180);
   await dismissCalculatorOverlays(page);
   await defaultCalculatorFormRoot(page).waitFor({ timeout: 30_000 });
 }
@@ -165,191 +135,19 @@ async function openCalculatorPage(browser: Browser, url: string): Promise<Page> 
   return page;
 }
 
-async function readButtonGroupOptions(group: Locator): Promise<string[]> {
-  return group.evaluate((el) =>
-    [...el.querySelectorAll("button")]
-      .map((button) => (button.textContent || "").replace(/\s+/g, " ").trim())
-      .filter(Boolean),
-  );
-}
-
-async function readActiveButton(group: Locator): Promise<string | null> {
-  return group.evaluate((el) => {
-    const active =
-      el.querySelector("li.active button") ??
-      el.querySelector("button.is-active") ??
-      el.querySelector("button.active");
-    return active ? (active.textContent || "").replace(/\s+/g, " ").trim() : null;
+async function extractControlStates(page: Page): Promise<ControlState[]> {
+  return extractCalculatorFormControls(page, {
+    ignoreLabels: new Set(),
+    includeSingletonButtonGroups: true,
   });
 }
 
-async function extractControlStates(page: Page): Promise<ControlState[]> {
-  const root = defaultCalculatorFormRoot(page);
-  const items = root.locator(".tiny-form-item");
-  const count = await items.count();
-  const controls: ControlState[] = [];
-
-  for (let rowIndex = 0; rowIndex < count; rowIndex++) {
-    const item = items.nth(rowIndex);
-    if (!(await item.isVisible().catch(() => false))) continue;
-
-    const label = normalizeText(
-      await item.locator(".tiny-form-item__label").first().innerText().catch(() => ""),
-    );
-
-    const group = item.locator(".tiny-button-group").first();
-    if ((await group.count()) > 0) {
-      const options = await readButtonGroupOptions(group);
-      if (options.length) {
-        controls.push({
-          rowIndex,
-          kind: "button-group",
-          label,
-          current: await readActiveButton(group),
-          options,
-        });
-      }
-      continue;
-    }
-
-    const input = item.locator("input.tiny-input__inner[readonly]").first();
-    if ((await input.count()) === 0) continue;
-
-    const current = normalizeText(await input.inputValue().catch(() => ""));
-    await input.click({ force: true });
-    try {
-      await page.locator(".tiny-select-dropdown.tiny-popper").last().waitFor({
-        state: "visible",
-        timeout: 8000,
-      });
-    } catch {
-      await page.keyboard.press("Escape").catch(() => undefined);
-      await page.waitForTimeout(200);
-      continue;
-    }
-
-    await page.waitForTimeout(100);
-    const options = (await readOpenTinySelectDropdownOptions(page)).map(normalizeText);
-    await page.keyboard.press("Escape").catch(() => undefined);
-    await page.waitForTimeout(100);
-
-    if (options.length) {
-      controls.push({
-        rowIndex,
-        kind: "select",
-        label,
-        current: current || null,
-        options,
-      });
-    }
-  }
-
-  return controls;
-}
-
 async function extractQuickSignature(page: Page): Promise<string> {
-  const root = defaultCalculatorFormRoot(page);
-  return root.evaluate((el) =>
-    JSON.stringify(
-      [...el.querySelectorAll(".tiny-form-item")]
-        .map((item) => {
-          const htmlItem = item as HTMLElement;
-          if (htmlItem.offsetParent === null) return null;
-
-          const label = (
-            item.querySelector(".tiny-form-item__label")?.textContent || ""
-          ).replace(/\s+/g, " ").trim();
-
-          const group = item.querySelector(".tiny-button-group");
-          if (group) {
-            const options = [...group.querySelectorAll("button")]
-              .map((button) => (button.textContent || "").replace(/\s+/g, " ").trim())
-              .filter(Boolean);
-            return options.length ? { kind: "button-group", label, options } : null;
-          }
-
-          const input = item.querySelector("input.tiny-input__inner[readonly]");
-          if (input) {
-            return { kind: "select", label };
-          }
-
-          return null;
-        })
-        .filter(Boolean),
-    ),
-  );
-}
-
-async function clickButtonGroupOption(item: Locator, option: string): Promise<boolean> {
-  const buttons = item.locator(".tiny-button-group button");
-  const count = await buttons.count();
-
-  for (let i = 0; i < count; i++) {
-    const button = buttons.nth(i);
-    const text = normalizeText(await button.innerText().catch(() => ""));
-    if (text !== option) continue;
-    await button.click();
-    return true;
-  }
-
-  return false;
-}
-
-async function clickVisibleDropdownOption(page: Page, option: string): Promise<boolean> {
-  return page.evaluate((targetOption) => {
-    const pops = [...document.querySelectorAll(".tiny-select-dropdown.tiny-popper")];
-    const visible = pops.filter((p) => {
-      const style = getComputedStyle(p);
-      const rect = p.getBoundingClientRect();
-      return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
-    });
-    const pop = visible[visible.length - 1];
-    if (!pop) return false;
-
-    const regionMatch = [...pop.querySelectorAll(".tvp-region__option-content-item[title]")].find(
-      (node) => (node.getAttribute("title") ?? "").replace(/\s+/g, " ").trim() === targetOption,
-    );
-    if (regionMatch instanceof HTMLElement) {
-      regionMatch.click();
-      return true;
-    }
-
-    const optionMatch = [...pop.querySelectorAll("li.tiny-option")].find((node) => {
-      const label = node.querySelector(".tiny-option-label");
-      return ((label?.textContent ?? node.textContent ?? "").replace(/\s+/g, " ").trim() === targetOption);
-    });
-    if (optionMatch instanceof HTMLElement) {
-      optionMatch.click();
-      return true;
-    }
-
-    return false;
-  }, option);
+  return readCalculatorFormQuickSignature(page);
 }
 
 async function applyAction(page: Page, action: Action): Promise<void> {
-  const item = defaultCalculatorFormRoot(page).locator(".tiny-form-item").nth(action.rowIndex);
-  await item.waitFor({ timeout: 30_000 });
-
-  if (action.kind === "button-group") {
-    const clicked = await clickButtonGroupOption(item, action.option);
-    if (!clicked) {
-      throw new Error(`Could not click button option "${action.option}" on ${controlDisplayLabel(action)}.`);
-    }
-  } else {
-    const input = item.locator("input.tiny-input__inner[readonly]").first();
-    await input.click({ force: true });
-    await page.locator(".tiny-select-dropdown.tiny-popper").last().waitFor({
-      state: "visible",
-      timeout: 8000,
-    });
-    const clicked = await clickVisibleDropdownOption(page, action.option);
-    if (!clicked) {
-      throw new Error(`Could not click dropdown option "${action.option}" on ${controlDisplayLabel(action)}.`);
-    }
-  }
-
-  await page.waitForTimeout(300);
+  await applyCalculatorFormAction(page, action);
 }
 
 async function captureStateForPath(

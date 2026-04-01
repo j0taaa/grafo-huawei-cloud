@@ -12,6 +12,8 @@
     "probe:cce-sao-paulo-3state": "tsx src/cce-sao-paulo-3state-automaton.ts",
     "probe:huawei-pricing-visible-automaton": "tsx src/huawei-pricing-visible-automaton.ts",
     "render:service-graph": "tsx src/render-service-graph.ts",
+    "test": "tsx --test \"src/**/*.test.ts\"",
+    "test:live": "HUAWEI_LIVE_TEST=1 tsx --test \"src/**/*.test.ts\"",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [],
