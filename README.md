@@ -21,6 +21,7 @@ Playwright probes and state graphs for the Huawei Cloud **pricing calculator** (
 | `HUAWEI_VISIBLE_AUTOMATON_CONCURRENCY` | `4` | Worker pool for `huawei-pricing-visible-automaton`. |
 | `HUAWEI_VISIBLE_AUTOMATON_MAX_STATES` | _(unset)_ | Cap BFS states (safety / faster partial runs). |
 | `HUAWEI_LIVE_TEST` | _(unset)_ | Set to `1` for live Playwright regression tests. |
+| `GRAPH_RENDER_DPR` | `2.5` | Device scale for `render:service-graph` PNGs (try `3` if text is still small). |
 
 ## Outputs
 

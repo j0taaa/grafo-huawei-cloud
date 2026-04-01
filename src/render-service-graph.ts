@@ -5,6 +5,12 @@ import { instance } from "@viz-js/viz";
 
 const OUTPUT_DIR = path.resolve("graphs");
 
+/** Device pixel ratio for PNG (2–3 recommended for dense graphs). Override with GRAPH_RENDER_DPR. */
+const RENDER_DEVICE_SCALE = Math.min(
+  4,
+  Math.max(1, Number(process.env.GRAPH_RENDER_DPR ?? "2.5") || 2.5),
+);
+
 type GraphState = {
   id: string;
   title: string;
@@ -336,9 +342,9 @@ function buildDot(spec: GraphSpec): string {
   const lines = [
     "digraph service_graph {",
     "  rankdir=LR;",
-    '  graph [bgcolor="white", pad="0.2", nodesep="0.5", ranksep="0.9"];',
-    '  node [shape=box, style="rounded,filled", fillcolor="#F8FAFF", color="#1D4ED8", fontname="Helvetica", fontsize=12];',
-    '  edge [color="#6B7280", fontname="Helvetica", fontsize=10];',
+    '  graph [bgcolor="white", pad="0.35", nodesep="0.75", ranksep="1.25", fontsize=16, labelfontsize=16];',
+    '  node [shape=box, style="rounded,filled", fillcolor="#F8FAFF", color="#1D4ED8", fontname="Helvetica", fontsize=15];',
+    '  edge [color="#6B7280", fontname="Helvetica", fontsize=12];',
     `  label="${[spec.title, spec.subtitle].join("\\n").replace(/"/g, '\\"')}";`,
     "  labelloc=t;",
     "  labeljust=l;",
@@ -360,12 +366,22 @@ function buildDot(spec: GraphSpec): string {
 async function renderSvgToPng(svg: string, pngPath: string): Promise<void> {
   const browser = await chromium.launch({ headless: true });
   try {
-    const page = await browser.newPage({ viewport: { width: 2400, height: 1800 } });
+    const page = await browser.newPage({
+      viewport: { width: 1280, height: 720 },
+      deviceScaleFactor: RENDER_DEVICE_SCALE,
+    });
     await page.setContent(
-      `<html><body style="margin:0;background:#fff;display:flex;justify-content:center;align-items:flex-start;">${svg}</body></html>`,
+      `<!DOCTYPE html><html><head><meta charset="utf-8"/></head>` +
+        `<body style="margin:0;background:#fff;line-height:0;display:inline-block;">${svg}</body></html>`,
       { waitUntil: "load" },
     );
-    await page.locator("svg").first().screenshot({ path: pngPath });
+    await page.screenshot({
+      path: pngPath,
+      fullPage: true,
+      omitBackground: false,
+      type: "png",
+      scale: "device",
+    });
   } finally {
     await browser.close();
   }
