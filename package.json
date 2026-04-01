@@ -1,0 +1,28 @@
+{
+  "name": "grafohuaweicloud",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "probe:huawei-ecs": "tsx src/huawei-ecs-billing-modes.ts",
+    "probe:huawei-ecs-options": "tsx src/huawei-ecs-calculator-options.ts",
+    "probe:huawei-pricing-options": "tsx src/huawei-ecs-calculator-options.ts",
+    "probe:huawei-pricing-automaton": "tsx src/huawei-pricing-automaton.ts",
+    "probe:cce-derived-automaton": "tsx src/cce-derived-automaton.ts",
+    "probe:cce-sao-paulo-3state": "tsx src/cce-sao-paulo-3state-automaton.ts",
+    "probe:huawei-pricing-visible-automaton": "tsx src/huawei-pricing-visible-automaton.ts",
+    "render:service-graph": "tsx src/render-service-graph.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "Browser automation probes for Huawei Cloud pricing pages.",
+  "dependencies": {
+    "@types/node": "^25.5.0",
+    "@viz-js/viz": "^3.25.0",
+    "playwright": "^1.58.2",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
+  }
+}
