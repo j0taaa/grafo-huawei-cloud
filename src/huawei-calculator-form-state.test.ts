@@ -54,3 +54,43 @@ test("canonicalizeCalculatorOption normalizes Required Duration", () => {
   assert.equal(canonicalizeCalculatorOption("Required Duration", "1 month"), "1");
   assert.equal(canonicalizeCalculatorOption("Required Duration", "3 months"), "3");
 });
+
+test("calculatorFormSignature distinguishes checkbox slots on the same row", () => {
+  const a: CalculatorFormControl[] = [
+    {
+      rowIndex: 2,
+      kind: "checkbox",
+      label: "Add-on — Option A",
+      current: "unchecked",
+      options: ["unchecked", "checked"],
+      checkboxIndex: 0,
+    },
+    {
+      rowIndex: 2,
+      kind: "checkbox",
+      label: "Add-on — Option B",
+      current: "unchecked",
+      options: ["unchecked", "checked"],
+      checkboxIndex: 1,
+    },
+  ];
+  const b: CalculatorFormControl[] = [
+    {
+      rowIndex: 2,
+      kind: "checkbox",
+      label: "Add-on — Option A",
+      current: "checked",
+      options: ["unchecked", "checked"],
+      checkboxIndex: 0,
+    },
+    {
+      rowIndex: 2,
+      kind: "checkbox",
+      label: "Add-on — Option B",
+      current: "unchecked",
+      options: ["unchecked", "checked"],
+      checkboxIndex: 1,
+    },
+  ];
+  assert.notEqual(calculatorFormSignature(a), calculatorFormSignature(b));
+});

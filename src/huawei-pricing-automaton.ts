@@ -60,7 +60,11 @@ function controlDisplayLabel(control: Pick<ControlState | Action, "label" | "row
 }
 
 function actionDisplayLabel(action: Action): string {
-  return `${controlDisplayLabel(action)}=${action.option}`;
+  const slot =
+    action.kind === "checkbox" && (action.checkboxIndex ?? 0) > 0
+      ? `[${action.checkboxIndex}]`
+      : "";
+  return `${controlDisplayLabel(action)}${slot}=${action.option}`;
 }
 
 function stateSignature(controls: ControlState[], memory: Record<string, string>): string {
@@ -71,6 +75,7 @@ function stateSignature(controls: ControlState[], memory: Record<string, string>
         label: control.label,
         options: control.options,
         current: control.current ?? "",
+        ...(control.kind === "checkbox" ? { checkboxIndex: control.checkboxIndex ?? 0 } : {}),
       })),
       memory: Object.fromEntries(Object.entries(memory).sort(([a], [b]) => a.localeCompare(b))),
     },
@@ -104,11 +109,13 @@ function updateVisibleControlCurrent(
   controls: ControlState[],
   action: Action,
 ): ControlState[] {
-  return controls.map((control) =>
-    control.rowIndex === action.rowIndex && control.kind === action.kind
-      ? { ...control, current: action.option }
-      : control,
-  );
+  return controls.map((control) => {
+    if (control.rowIndex !== action.rowIndex || control.kind !== action.kind) return control;
+    if (action.kind === "checkbox" && (control.checkboxIndex ?? 0) !== (action.checkboxIndex ?? 0)) {
+      return control;
+    }
+    return { ...control, current: action.option };
+  });
 }
 
 function updateMemoryForAction(memory: Record<string, string>, action: Action): Record<string, string> {
@@ -254,6 +261,7 @@ async function buildAutomaton(service: string, url: string): Promise<Automaton> 
             kind: control.kind,
             label: control.label,
             option,
+            ...(control.kind === "checkbox" ? { checkboxIndex: control.checkboxIndex ?? 0 } : {}),
           });
         }
       }

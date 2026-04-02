@@ -6,7 +6,7 @@ Playwright probes and state graphs for the Huawei Cloud **pricing calculator** (
 
 | Command | Description |
 |--------|-------------|
-| `npm run probe:huawei-pricing-visible-automaton -- --service=rds` | BFS over UI states (Region select + buttons + other selects). |
+| `npm run probe:huawei-pricing-visible-automaton -- --service=rds` | BFS over UI states (Region select, button groups, **checkboxes** e.g. ELB, readonly selects). |
 | `npm run probe:huawei-pricing-automaton -- --service=cce` | Full automaton (concurrency + quick signature). |
 | `npm run render:service-graph -- --service=rds` | Writes `graph-specs/<service>.json` (with live `regions[]`) and `graphs/<service>.png`. Use `--skip-region-fetch` for offline. |
 | `npm test` | Unit tests (offline). |

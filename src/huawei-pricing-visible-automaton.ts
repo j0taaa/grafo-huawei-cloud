@@ -194,6 +194,7 @@ function buildCandidateActions(controls: CalculatorFormControl[]): CalculatorFor
         kind: control.kind,
         label: control.label,
         option,
+        ...(control.kind === "checkbox" ? { checkboxIndex: control.checkboxIndex ?? 0 } : {}),
       });
     }
   }
@@ -202,7 +203,11 @@ function buildCandidateActions(controls: CalculatorFormControl[]): CalculatorFor
 
 function actionDisplay(action: CalculatorFormAction): string {
   const lab = action.label || `row-${action.rowIndex}`;
-  return `${lab}=${action.option}`;
+  const slot =
+    action.kind === "checkbox" && (action.checkboxIndex ?? 0) > 0
+      ? `[${action.checkboxIndex}]`
+      : "";
+  return `${lab}${slot}=${action.option}`;
 }
 
 async function captureStateForPath(
@@ -327,8 +332,9 @@ function buildDot(automaton: Automaton): string {
     for (const control of state.controls) {
       const cur = control.current ? ` [${control.current}]` : "";
       const opts = control.options.join(" | ");
-      const kind = control.kind === "select" ? "select" : "btn";
-      labelLines.push(`${kind} ${control.label || "(unlabeled)"}${cur}: ${opts}`);
+      const kindTag =
+        control.kind === "select" ? "select" : control.kind === "checkbox" ? "cb" : "btn";
+      labelLines.push(`${kindTag} ${control.label || "(unlabeled)"}${cur}: ${opts}`);
     }
     const label = labelLines.join("\\n").replace(/"/g, '\\"');
     lines.push(`  ${state.id} [label="${label}"];`);

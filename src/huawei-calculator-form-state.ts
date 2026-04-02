@@ -1,15 +1,17 @@
 import type { Locator, Page } from "playwright";
 import { defaultCalculatorFormRoot, readOpenTinySelectDropdownOptions } from "./huawei-ecs-calculator-options.js";
 
-export type CalculatorFormControlKind = "button-group" | "select";
+export type CalculatorFormControlKind = "button-group" | "checkbox" | "select";
 
-/** One interactive row in the active calculator form (buttons or readonly Tiny select). */
+/** One interactive row in the active calculator form (buttons, checkboxes, or readonly Tiny select). */
 export type CalculatorFormControl = {
   rowIndex: number;
   kind: CalculatorFormControlKind;
   label: string;
   current: string | null;
   options: string[];
+  /** When kind is `checkbox`, 0-based index among visible checkboxes in this `.tiny-form-item`. */
+  checkboxIndex?: number;
 };
 
 export type CalculatorFormAction = {
@@ -17,6 +19,7 @@ export type CalculatorFormAction = {
   kind: CalculatorFormControlKind;
   label: string;
   option: string;
+  checkboxIndex?: number;
 };
 
 const SETTLE_MS = Number(process.env.HUAWEI_AUTOMATON_SETTLE_MS ?? "350");
@@ -37,18 +40,23 @@ export function canonicalizeCalculatorOption(label: string, option: string): str
 export function calculatorFormSignature(controls: CalculatorFormControl[]): string {
   return JSON.stringify(
     [...controls]
-      .sort((a, b) => a.rowIndex - b.rowIndex)
+      .sort((a, b) =>
+        a.rowIndex !== b.rowIndex
+          ? a.rowIndex - b.rowIndex
+          : (a.checkboxIndex ?? 0) - (b.checkboxIndex ?? 0),
+      )
       .map((c) => ({
         kind: c.kind,
         label: c.label,
         current: c.current ?? "",
         options: [...c.options],
+        ...(c.kind === "checkbox" ? { checkboxIndex: c.checkboxIndex ?? 0 } : {}),
       })),
   );
 }
 
 /**
- * Fast DOM fingerprint: visible button-group option sets + active choice, and readonly select display values.
+ * Fast DOM fingerprint: button-groups, checkboxes, and readonly select display values.
  * Used to skip redundant full extractions when the UI clearly changed.
  */
 export async function readCalculatorFormQuickSignature(page: Page): Promise<string> {
@@ -102,6 +110,28 @@ export async function readCalculatorFormQuickSignature(page: Page): Promise<stri
         return;
       }
 
+      const checkboxes = [...item.querySelectorAll('input[type="checkbox"]')].filter((cb) => {
+        const h = cb as HTMLElement;
+        if (h.offsetParent === null && getComputedStyle(h).position !== "fixed") return false;
+        const st = getComputedStyle(h);
+        if (st.display === "none" || st.visibility === "hidden" || st.opacity === "0") return false;
+        const r = h.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      });
+      if (checkboxes.length > 0) {
+        checkboxes.forEach((cb, slot) => {
+          const input = cb as HTMLInputElement;
+          parts.push({
+            rowIndex,
+            k: "cb",
+            label,
+            slot,
+            checked: Boolean(input.checked),
+          });
+        });
+        return;
+      }
+
       const input = item.querySelector("input.tiny-input__inner[readonly]") as HTMLInputElement | null;
       if (input) {
         const h = input as HTMLElement;
@@ -124,8 +154,9 @@ export async function readCalculatorFormQuickSignature(page: Page): Promise<stri
 }
 
 /**
- * Extract all visible button groups and readonly selects under the active form.
+ * Extract all visible button groups, checkboxes, and readonly selects under the active form.
  * - Button options: **visible** buttons only (avoids hidden duplicate DOM).
+ * - Checkboxes: one control per visible `input[type=checkbox]` (e.g. ELB); options are `unchecked` | `checked`.
  * - Select options: opens each dropdown, reads options, closes — needed for correct state when lists change.
  * - Includes single-option button groups in the signature (e.g. only "Dedicated" after HA read replica).
  */
@@ -182,6 +213,53 @@ export async function extractCalculatorFormControls(
         current,
         options: opts.map((o) => canonicalizeCalculatorOption(label, o)),
       });
+      continue;
+    }
+
+    const checkboxLocators = item.locator('input[type="checkbox"]');
+    const cbCount = await checkboxLocators.count();
+    const visibleCheckboxIndices: number[] = [];
+    for (let ci = 0; ci < cbCount; ci++) {
+      const cb = checkboxLocators.nth(ci);
+      if (await cb.isVisible().catch(() => false)) visibleCheckboxIndices.push(ci);
+    }
+
+    if (visibleCheckboxIndices.length > 0) {
+      const baseLabel = label;
+      for (let slot = 0; slot < visibleCheckboxIndices.length; slot++) {
+        const ci = visibleCheckboxIndices[slot]!;
+        const cb = checkboxLocators.nth(ci);
+        const legible = normalizeCalculatorText(
+          await cb.evaluate((el) => {
+            const input = el as HTMLInputElement;
+            const host =
+              input.closest("label") ??
+              input.closest(".tiny-checkbox") ??
+              input.parentElement?.parentElement;
+            if (!host) return "";
+            const clone = host.cloneNode(true) as HTMLElement;
+            const inputs = clone.querySelectorAll("input");
+            inputs.forEach((n) => n.remove());
+            return (clone.textContent || "").replace(/\s+/g, " ").trim();
+          }),
+        );
+        const rowLabel =
+          visibleCheckboxIndices.length > 1
+            ? legible
+              ? `${baseLabel} — ${legible}`
+              : `${baseLabel} (${slot + 1})`
+            : baseLabel || legible || `checkbox row ${rowIndex}`;
+
+        const checked = await cb.isChecked().catch(() => false);
+        controls.push({
+          rowIndex,
+          kind: "checkbox",
+          label: rowLabel,
+          current: checked ? "checked" : "unchecked",
+          options: ["unchecked", "checked"],
+          checkboxIndex: slot,
+        });
+      }
       continue;
     }
 
@@ -273,6 +351,8 @@ async function clickVisibleDropdownOption(page: Page, option: string): Promise<b
   }, target);
 }
 
+const CHECKBOX_OPTIONS = new Set(["unchecked", "checked"]);
+
 export async function applyCalculatorFormAction(page: Page, action: CalculatorFormAction): Promise<void> {
   const item = defaultCalculatorFormRoot(page).locator(".tiny-form-item").nth(action.rowIndex);
   await item.waitFor({ state: "visible", timeout: 25_000 });
@@ -283,6 +363,29 @@ export async function applyCalculatorFormAction(page: Page, action: CalculatorFo
       throw new Error(
         `Could not click button "${action.option}" for ${action.label || `row-${action.rowIndex}`}.`,
       );
+    }
+  } else if (action.kind === "checkbox") {
+    const wantChecked = action.option === "checked";
+    if (!CHECKBOX_OPTIONS.has(action.option)) {
+      throw new Error(`Invalid checkbox action "${action.option}" (use unchecked or checked).`);
+    }
+
+    const boxes = item.locator('input[type="checkbox"]');
+    const visibleIdx: number[] = [];
+    const n = await boxes.count();
+    for (let i = 0; i < n; i++) {
+      if (await boxes.nth(i).isVisible().catch(() => false)) visibleIdx.push(i);
+    }
+    const slot = action.checkboxIndex ?? 0;
+    if (slot < 0 || slot >= visibleIdx.length) {
+      throw new Error(
+        `Checkbox slot ${slot} out of range for ${action.label || `row-${action.rowIndex}`} (${visibleIdx.length} visible).`,
+      );
+    }
+    const target = boxes.nth(visibleIdx[slot]!);
+    const isChecked = await target.isChecked().catch(() => false);
+    if (isChecked !== wantChecked) {
+      await target.click({ force: true });
     }
   } else {
     const input = item.locator("input.tiny-input__inner[readonly]").first();
