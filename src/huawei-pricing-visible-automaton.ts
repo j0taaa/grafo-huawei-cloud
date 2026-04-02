@@ -79,7 +79,10 @@ function getRegionArg(): string | null {
 }
 
 function getIgnoreLabels(): Set<string> {
-  const raw = parseArgValue("--ignore-labels") ?? process.env.HUAWEI_AUTOMATON_IGNORE_LABELS ?? "Region";
+  const raw =
+    parseArgValue("--ignore-labels") ??
+    process.env.HUAWEI_AUTOMATON_IGNORE_LABELS ??
+    "AZ,Sub-AZ";
   return new Set(
     raw
       .split(",")

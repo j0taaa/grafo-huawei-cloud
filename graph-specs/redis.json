@@ -1,7 +1,7 @@
 {
   "name": "redis",
   "title": "DCS (for Redis) Visible-State Graph",
-  "subtitle": "Default calculator region; state = visible clickable options only",
+  "subtitle": "All regions: Region select + visible controls; see regions[] in JSON; automaton includes Region by default (25 regions)",
   "states": [
     {
       "id": "R0",
@@ -179,5 +179,32 @@
       "to": "R5",
       "action": "Edition=Professional (performance)"
     }
+  ],
+  "regions": [
+    "CN-Hong Kong",
+    "AP-Bangkok",
+    "AP-Singapore",
+    "AP-Jakarta",
+    "AP-Manila",
+    "AP-Kuala Lumpur-OP6",
+    "CN North-Beijing4",
+    "CN North3",
+    "CN East-Shanghai1",
+    "CN East-Qingdao",
+    "CN East2",
+    "CN South-Guangzhou",
+    "CN Southwest-Guiyang1",
+    "ME-Riyadh",
+    "AF-Johannesburg",
+    "AF-Cairo",
+    "EU-Paris",
+    "EU-Dublin",
+    "TR-Istanbul",
+    "TR-Ankara-PUR",
+    "LA-Santiago",
+    "LA-Mexico City1",
+    "LA-Mexico City2",
+    "LA-Sao Paulo1",
+    "LA-Buenos Aires1"
   ]
 }

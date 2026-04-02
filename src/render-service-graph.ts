@@ -2,6 +2,11 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright";
 import { instance } from "@viz-js/viz";
+import {
+  calculatorUrlForService,
+  collectRegionDropdownOptions,
+  dismissCalculatorOverlays,
+} from "./huawei-ecs-calculator-options.js";
 
 const OUTPUT_DIR = path.resolve("graphs");
 /** Hand-maintained graph specs as JSON (same basename as PNGs in `graphs/`). */
@@ -31,6 +36,8 @@ type GraphSpec = {
   subtitle: string;
   states: GraphState[];
   edges: GraphEdge[];
+  /** Populated at export time from the live Region dropdown (unless --skip-region-fetch). */
+  regions?: string[];
 };
 
 function getServiceArg(): string {
@@ -42,12 +49,48 @@ function getServiceArg(): string {
   return "cce";
 }
 
+/** Hash segment for calculator URL (DCS uses `redis` in practice). */
+function calculatorSlugForService(service: string): string {
+  const s = service.toLowerCase();
+  if (s === "dcs") return "redis";
+  return s;
+}
+
+function shouldSkipRegionFetch(): boolean {
+  return (
+    process.argv.includes("--skip-region-fetch") ||
+    process.env.GRAPH_SKIP_REGION_FETCH === "1"
+  );
+}
+
+async function fetchRegionsForCalculator(service: string): Promise<string[]> {
+  const slug = calculatorSlugForService(service);
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1600, height: 1200 } });
+    await page.goto(calculatorUrlForService(slug), {
+      waitUntil: "domcontentloaded",
+      timeout: 90_000,
+    });
+    await page.getByRole("tab", { name: "Price Calculator" }).waitFor({ timeout: 90_000 });
+    await dismissCalculatorOverlays(page);
+    await page.waitForTimeout(280);
+    return await collectRegionDropdownOptions(page);
+  } catch (error) {
+    console.warn("Could not fetch regions (offline or UI change):", error);
+    return [];
+  } finally {
+    await browser.close();
+  }
+}
+
 function getGraphSpec(service: string): GraphSpec {
   if (service === "cce") {
     return {
       name: "cce",
       title: "CCE Visible-State Graph",
-      subtitle: "Region fixed to LA-Sao Paulo1; state = visible clickable options only",
+      subtitle:
+        "All regions: Region is a select on the form; options listed in graph-spec regions[]; visible automaton explores Region unless ignored",
       states: [
         {
           id: "S0",
@@ -92,7 +135,8 @@ function getGraphSpec(service: string): GraphSpec {
     return {
       name: "redis",
       title: "DCS (for Redis) Visible-State Graph",
-      subtitle: "Default calculator region; state = visible clickable options only",
+      subtitle:
+        "All regions: Region select + visible controls; see regions[] in JSON; automaton includes Region by default",
       states: [
         {
           id: "R0",
@@ -207,7 +251,7 @@ function getGraphSpec(service: string): GraphSpec {
       name: "rds",
       title: "RDS Visible-State Graph",
       subtitle:
-        "Buttons + readonly selects; HA read replica hides General-purpose; instance spec select options depend on class",
+        "All regions: Region select + buttons/selects; HA read replica hides General-purpose; see regions[] in JSON",
       states: [
         {
           id: "D0",
@@ -394,6 +438,13 @@ async function main(): Promise<void> {
   const spec = getGraphSpec(service);
   await mkdir(OUTPUT_DIR, { recursive: true });
   await mkdir(GRAPH_SPECS_JSON_DIR, { recursive: true });
+
+  if (!shouldSkipRegionFetch()) {
+    spec.regions = await fetchRegionsForCalculator(service);
+    if (spec.regions.length) {
+      spec.subtitle = `${spec.subtitle} (${spec.regions.length} regions)`;
+    }
+  }
 
   const jsonPath = path.join(GRAPH_SPECS_JSON_DIR, `${spec.name}.json`);
   await writeFile(jsonPath, `${JSON.stringify(spec, null, 2)}\n`, "utf8");

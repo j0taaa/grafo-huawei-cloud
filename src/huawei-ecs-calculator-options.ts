@@ -91,6 +91,50 @@ export async function dismissCalculatorOverlays(page: Page): Promise<void> {
  * Returns option labels for the currently visible TinyVue select popper (if any).
  * Handles the special region dropdown (`.tvp-region__option-content-item[title]`).
  */
+function normalizeFormLabel(raw: string | null | undefined): string {
+  return (raw ?? "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Opens the **Region** readonly select on the active calculator form and returns all option titles.
+ * Closes the dropdown afterward. Returns [] if no Region row is found.
+ */
+export async function collectRegionDropdownOptions(page: Page): Promise<string[]> {
+  const root = defaultCalculatorFormRoot(page);
+  await root.waitFor({ timeout: 30_000 }).catch(() => undefined);
+  const items = root.locator(".tiny-form-item");
+  const count = await items.count();
+
+  for (let i = 0; i < count; i++) {
+    const item = items.nth(i);
+    const label = normalizeFormLabel(
+      await item.locator(".tiny-form-item__label").first().innerText().catch(() => ""),
+    );
+    if (label !== "Region") continue;
+
+    const input = item.locator("input.tiny-input__inner[readonly]").first();
+    if ((await input.count()) === 0) return [];
+
+    await input.click({ force: true });
+    try {
+      await page.locator(".tiny-select-dropdown.tiny-popper").last().waitFor({
+        state: "visible",
+        timeout: 8000,
+      });
+    } catch {
+      await page.keyboard.press("Escape").catch(() => undefined);
+      return [];
+    }
+
+    const opts = await readOpenTinySelectDropdownOptions(page);
+    await page.keyboard.press("Escape").catch(() => undefined);
+    await page.waitForTimeout(150);
+    return opts;
+  }
+
+  return [];
+}
+
 export async function readOpenTinySelectDropdownOptions(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const pops = [...document.querySelectorAll(".tiny-select-dropdown.tiny-popper")];

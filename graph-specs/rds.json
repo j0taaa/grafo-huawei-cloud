@@ -1,7 +1,7 @@
 {
   "name": "rds",
   "title": "RDS Visible-State Graph",
-  "subtitle": "Buttons + readonly selects; HA read replica hides General-purpose; instance spec select options depend on class",
+  "subtitle": "All regions: Region select + buttons/selects; HA read replica hides General-purpose; see regions[] in JSON (25 regions)",
   "states": [
     {
       "id": "D0",
@@ -215,5 +215,32 @@
       "to": "D5",
       "action": "Billing Mode=Yearly/Monthly"
     }
+  ],
+  "regions": [
+    "CN-Hong Kong",
+    "AP-Bangkok",
+    "AP-Singapore",
+    "AP-Jakarta",
+    "AP-Manila",
+    "AP-Kuala Lumpur-OP6",
+    "CN North-Beijing4",
+    "CN East-Shanghai1",
+    "CN East-Qingdao",
+    "CN East2",
+    "CN South-Guangzhou",
+    "CN Southwest-Guiyang1",
+    "ME-Riyadh",
+    "AF-Johannesburg",
+    "AF-Cairo",
+    "EU-Paris",
+    "EU-Dublin",
+    "TR-Istanbul",
+    "TR-Ankara-PUR",
+    "LA-Santiago",
+    "LA-Mexico City1",
+    "LA-Mexico City2",
+    "LA-Lima1",
+    "LA-Sao Paulo1",
+    "LA-Buenos Aires1"
   ]
 }
