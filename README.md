@@ -8,7 +8,7 @@ Playwright probes and state graphs for the Huawei Cloud **pricing calculator** (
 |--------|-------------|
 | `npm run probe:huawei-pricing-visible-automaton -- --service=rds` | BFS over UI states (buttons + readonly selects). |
 | `npm run probe:huawei-pricing-automaton -- --service=cce` | Full automaton (concurrency + quick signature). |
-| `npm run render:service-graph -- --service=rds` | Renders `graphs/<service>.png` from the hand-maintained graph spec. |
+| `npm run render:service-graph -- --service=rds` | Writes `graph-specs/<service>.json` and `graphs/<service>.png` from the hand-maintained spec. |
 | `npm test` | Unit tests (offline). |
 | `npm run test:live` | Hits the live calculator (needs network); set `HUAWEI_LIVE_TEST=1` is automatic in script. |
 
@@ -26,4 +26,5 @@ Playwright probes and state graphs for the Huawei Cloud **pricing calculator** (
 ## Outputs
 
 - `graphs/` — PNG exports from `render:service-graph`.
+- `graph-specs/` — Same graph definitions as structured JSON (`name`, `title`, `subtitle`, `states`, `edges`).
 - `playwright-output/` — Automaton JSON/DOT/SVG/PNG from probe scripts (gitignored).

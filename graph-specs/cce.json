@@ -1,0 +1,62 @@
+{
+  "name": "cce",
+  "title": "CCE Visible-State Graph",
+  "subtitle": "Region fixed to LA-Sao Paulo1; state = visible clickable options only",
+  "states": [
+    {
+      "id": "S0",
+      "title": "Default / Yearly-Monthly",
+      "controls": [
+        "Billing Mode: Yearly/Monthly | Pay-per-use",
+        "Cluster Scale: 50 | 200 | 1000 | 2000",
+        "Master Nodes: 3 Masters | Single",
+        "Required Duration: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 1 year"
+      ]
+    },
+    {
+      "id": "S1",
+      "title": "Pay-per-use + CCE cluster",
+      "controls": [
+        "Billing Mode: Yearly/Monthly | Pay-per-use",
+        "Product Category: CCE cluster | CCE Autopilot cluster",
+        "Cluster Scale: 50 | 200 | 1000 | 2000",
+        "Master Nodes: 3 Masters | Single"
+      ]
+    },
+    {
+      "id": "S2",
+      "title": "Pay-per-use + CCE Autopilot",
+      "controls": [
+        "Billing Mode: Yearly/Monthly | Pay-per-use",
+        "Product Category: CCE cluster | CCE Autopilot cluster"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "S0",
+      "to": "S1",
+      "action": "Billing Mode=Pay-per-use"
+    },
+    {
+      "from": "S1",
+      "to": "S0",
+      "action": "Billing Mode=Yearly/Monthly"
+    },
+    {
+      "from": "S1",
+      "to": "S2",
+      "action": "Product Category=CCE Autopilot cluster"
+    },
+    {
+      "from": "S2",
+      "to": "S1",
+      "action": "Product Category=CCE cluster"
+    },
+    {
+      "from": "S2",
+      "to": "S0",
+      "action": "Billing Mode=Yearly/Monthly"
+    }
+  ]
+}

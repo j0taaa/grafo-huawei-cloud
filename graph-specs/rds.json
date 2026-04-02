@@ -1,0 +1,219 @@
+{
+  "name": "rds",
+  "title": "RDS Visible-State Graph",
+  "subtitle": "Buttons + readonly selects; HA read replica hides General-purpose; instance spec select options depend on class",
+  "states": [
+    {
+      "id": "D0",
+      "title": "MySQL / Yearly-Monthly (default class)",
+      "controls": [
+        "Billing Mode: Yearly/Monthly | Pay-per-use",
+        "DB Engine: MySQL | PostgreSQL",
+        "DB Engine Version: 8.0 | 5.7",
+        "DB Instance Type: Primary/Standby | Single | Read replica | HA read replica",
+        "DB Instance Class: General-purpose | Dedicated [typical start: General-purpose]",
+        "select: Instance specification (vCPU/RAM) — list A for General-purpose",
+        "Required Duration: 1 month | 2–9 | 1 year"
+      ]
+    },
+    {
+      "id": "D4",
+      "title": "MySQL / Yearly / Dedicated selected",
+      "controls": [
+        "Billing Mode: Yearly/Monthly | Pay-per-use",
+        "DB Engine: MySQL | PostgreSQL",
+        "DB Engine Version: 8.0 | 5.7",
+        "DB Instance Type: Primary/Standby | Single | Read replica | HA read replica",
+        "DB Instance Class: General-purpose | Dedicated [current: Dedicated]",
+        "select: Instance specification — list B (different sizes than General-purpose)",
+        "Required Duration: 1 month | 2–9 | 1 year"
+      ]
+    },
+    {
+      "id": "D5",
+      "title": "MySQL / Yearly / HA read replica",
+      "controls": [
+        "Billing Mode: Yearly/Monthly | Pay-per-use",
+        "DB Engine: MySQL | PostgreSQL",
+        "DB Engine Version: 8.0 | 5.7",
+        "DB Instance Type: Primary/Standby | Single | Read replica | HA read replica [current: HA read replica]",
+        "DB Instance Class: Dedicated only (General-purpose not offered)",
+        "select: Instance specification",
+        "Required Duration: 1 month | 2–9 | 1 year"
+      ]
+    },
+    {
+      "id": "D1",
+      "title": "MySQL / Pay-per-use (default class)",
+      "controls": [
+        "Billing Mode: Yearly/Monthly | Pay-per-use",
+        "DB Engine: MySQL | PostgreSQL",
+        "DB Engine Version: 8.0 | 5.7",
+        "DB Instance Type: Primary/Standby | Single | Read replica | HA read replica | Proxy",
+        "DB Instance Class: General-purpose | Dedicated",
+        "select: Instance specification — list depends on class"
+      ]
+    },
+    {
+      "id": "D6",
+      "title": "MySQL / Pay-per-use / Dedicated selected",
+      "controls": [
+        "Billing Mode: Yearly/Monthly | Pay-per-use",
+        "DB Engine: MySQL | PostgreSQL",
+        "DB Engine Version: 8.0 | 5.7",
+        "DB Instance Type: Primary/Standby | Single | Read replica | HA read replica | Proxy",
+        "DB Instance Class: General-purpose | Dedicated [current: Dedicated]",
+        "select: Instance specification — alternate size list"
+      ]
+    },
+    {
+      "id": "D7",
+      "title": "MySQL / Pay-per-use / HA read replica",
+      "controls": [
+        "Billing Mode: Yearly/Monthly | Pay-per-use",
+        "DB Engine: MySQL | PostgreSQL",
+        "DB Engine Version: 8.0 | 5.7",
+        "DB Instance Type: … | HA read replica | Proxy [current: HA read replica]",
+        "DB Instance Class: Dedicated only",
+        "select: Instance specification"
+      ]
+    },
+    {
+      "id": "D2",
+      "title": "PostgreSQL / Yearly-Monthly",
+      "controls": [
+        "Billing Mode: Yearly/Monthly | Pay-per-use",
+        "DB Engine: MySQL | PostgreSQL",
+        "DB Engine Version: 17 | 16 | 15 | 14 | 13",
+        "DB Instance Type: Primary/Standby | Single | Read replica",
+        "DB Instance Class: General-purpose | Dedicated",
+        "select: Instance specification + Storage etc. — option lists depend on class",
+        "Required Duration: 1 month | 2–9 | 1 year"
+      ]
+    },
+    {
+      "id": "D3",
+      "title": "PostgreSQL / Pay-per-use",
+      "controls": [
+        "Billing Mode: Yearly/Monthly | Pay-per-use",
+        "DB Engine: MySQL | PostgreSQL",
+        "DB Engine Version: 17 | 16 | 15 | 14 | 13",
+        "DB Instance Type: Primary/Standby | Single | Read replica",
+        "DB Instance Class: General-purpose | Dedicated",
+        "select: Instance specification + Storage — lists depend on class"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "D0",
+      "to": "D1",
+      "action": "Billing Mode=Pay-per-use"
+    },
+    {
+      "from": "D1",
+      "to": "D0",
+      "action": "Billing Mode=Yearly/Monthly"
+    },
+    {
+      "from": "D0",
+      "to": "D2",
+      "action": "DB Engine=PostgreSQL"
+    },
+    {
+      "from": "D2",
+      "to": "D0",
+      "action": "DB Engine=MySQL"
+    },
+    {
+      "from": "D1",
+      "to": "D3",
+      "action": "DB Engine=PostgreSQL"
+    },
+    {
+      "from": "D3",
+      "to": "D1",
+      "action": "DB Engine=MySQL"
+    },
+    {
+      "from": "D2",
+      "to": "D3",
+      "action": "Billing Mode=Pay-per-use"
+    },
+    {
+      "from": "D3",
+      "to": "D2",
+      "action": "Billing Mode=Yearly/Monthly"
+    },
+    {
+      "from": "D0",
+      "to": "D4",
+      "action": "DB Instance Class=Dedicated"
+    },
+    {
+      "from": "D4",
+      "to": "D0",
+      "action": "DB Instance Class=General-purpose"
+    },
+    {
+      "from": "D1",
+      "to": "D6",
+      "action": "DB Instance Class=Dedicated"
+    },
+    {
+      "from": "D6",
+      "to": "D1",
+      "action": "DB Instance Class=General-purpose"
+    },
+    {
+      "from": "D0",
+      "to": "D5",
+      "action": "DB Instance Type=HA read replica"
+    },
+    {
+      "from": "D5",
+      "to": "D0",
+      "action": "DB Instance Type=Primary/Standby"
+    },
+    {
+      "from": "D4",
+      "to": "D5",
+      "action": "DB Instance Type=HA read replica"
+    },
+    {
+      "from": "D5",
+      "to": "D4",
+      "action": "DB Instance Type=Primary/Standby"
+    },
+    {
+      "from": "D1",
+      "to": "D7",
+      "action": "DB Instance Type=HA read replica"
+    },
+    {
+      "from": "D7",
+      "to": "D1",
+      "action": "DB Instance Type=Primary/Standby"
+    },
+    {
+      "from": "D6",
+      "to": "D7",
+      "action": "DB Instance Type=HA read replica"
+    },
+    {
+      "from": "D7",
+      "to": "D6",
+      "action": "DB Instance Type=Primary/Standby"
+    },
+    {
+      "from": "D5",
+      "to": "D7",
+      "action": "Billing Mode=Pay-per-use"
+    },
+    {
+      "from": "D7",
+      "to": "D5",
+      "action": "Billing Mode=Yearly/Monthly"
+    }
+  ]
+}

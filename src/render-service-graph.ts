@@ -4,6 +4,8 @@ import { chromium } from "playwright";
 import { instance } from "@viz-js/viz";
 
 const OUTPUT_DIR = path.resolve("graphs");
+/** Hand-maintained graph specs as JSON (same basename as PNGs in `graphs/`). */
+const GRAPH_SPECS_JSON_DIR = path.resolve("graph-specs");
 
 /** Device pixel ratio for PNG (2–3 recommended for dense graphs). Override with GRAPH_RENDER_DPR. */
 const RENDER_DEVICE_SCALE = Math.min(
@@ -391,6 +393,11 @@ async function main(): Promise<void> {
   const service = getServiceArg();
   const spec = getGraphSpec(service);
   await mkdir(OUTPUT_DIR, { recursive: true });
+  await mkdir(GRAPH_SPECS_JSON_DIR, { recursive: true });
+
+  const jsonPath = path.join(GRAPH_SPECS_JSON_DIR, `${spec.name}.json`);
+  await writeFile(jsonPath, `${JSON.stringify(spec, null, 2)}\n`, "utf8");
+  console.log(`JSON: ${jsonPath}`);
 
   const dot = buildDot(spec);
   const viz = await instance();
