@@ -11,6 +11,7 @@ import {
 } from "./huawei-ecs-calculator-options.js";
 import {
   applyCalculatorFormAction,
+  buildCandidateCalculatorActions,
   calculatorFormSignature,
   extractCalculatorFormControls,
   mapWithConcurrency,
@@ -183,24 +184,6 @@ async function openCalculatorSession(
   return page;
 }
 
-function buildCandidateActions(controls: CalculatorFormControl[]): CalculatorFormAction[] {
-  const actions: CalculatorFormAction[] = [];
-  for (const control of controls) {
-    if (control.options.length <= 1) continue;
-    for (const option of control.options) {
-      if (control.current && option === control.current) continue;
-      actions.push({
-        rowIndex: control.rowIndex,
-        kind: control.kind,
-        label: control.label,
-        option,
-        ...(control.kind === "checkbox" ? { checkboxIndex: control.checkboxIndex ?? 0 } : {}),
-      });
-    }
-  }
-  return actions;
-}
-
 function actionDisplay(action: CalculatorFormAction): string {
   const lab = action.label || `row-${action.rowIndex}`;
   const slot =
@@ -266,7 +249,7 @@ async function buildVisibleAutomaton(service: string, region: string | null): Pr
     while (queue.length && statesBySignature.size < MAX_STATES) {
       const signature = queue.shift()!;
       const state = statesBySignature.get(signature)!;
-      const actions = buildCandidateActions(state.controls);
+      const actions = buildCandidateCalculatorActions(state.controls);
 
       const results = await mapWithConcurrency(actions, VISIBLE_CONCURRENCY, async (action) => {
         const nextPath = [...state.path, action];

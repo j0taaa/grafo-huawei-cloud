@@ -21,6 +21,7 @@ Playwright probes and state graphs for the Huawei Cloud **pricing calculator** (
 | `HUAWEI_VISIBLE_AUTOMATON_CONCURRENCY` | `4` | Worker pool for `huawei-pricing-visible-automaton`. |
 | `HUAWEI_VISIBLE_AUTOMATON_MAX_STATES` | _(unset)_ | Cap BFS states (safety / faster partial runs). |
 | `HUAWEI_AUTOMATON_IGNORE_LABELS` | `AZ,Sub-AZ` | Visible automaton: labels to skip. **Region is not ignored** so every region is a valid `Region=<name>` transition. Use `Region,AZ,Sub-AZ` to keep the old “single region page” behavior. |
+| `HUAWEI_AUTOMATON_EXPLORE_LAST_CONTROL` | _(unset)_ | Both automata: set to `1` to branch on the **deepest** multi-option control (e.g. try every Required Duration). Default **skips** that control so leaf rows do not multiply BFS (~10× faster when duration is last). CLI: `--explore-last-control`. |
 | `HUAWEI_LIVE_TEST` | _(unset)_ | Set to `1` for live Playwright regression tests. |
 | `GRAPH_RENDER_DPR` | `2.5` | Device scale for `render:service-graph` PNGs (try `3` if text is still small). |
 | `GRAPH_SKIP_REGION_FETCH` | _(unset)_ | Set to `1` to skip opening the calculator when exporting graph JSON (no `regions[]`). Same as CLI `--skip-region-fetch`. |

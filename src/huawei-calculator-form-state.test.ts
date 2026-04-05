@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildCandidateCalculatorActions,
   calculatorFormSignature,
   canonicalizeCalculatorOption,
+  getDeepestMultiOptionControl,
   type CalculatorFormControl,
 } from "./huawei-calculator-form-state.js";
 
@@ -53,6 +55,76 @@ test("calculatorFormSignature distinguishes select option lists", () => {
 test("canonicalizeCalculatorOption normalizes Required Duration", () => {
   assert.equal(canonicalizeCalculatorOption("Required Duration", "1 month"), "1");
   assert.equal(canonicalizeCalculatorOption("Required Duration", "3 months"), "3");
+});
+
+test("getDeepestMultiOptionControl picks last row among multi-option controls", () => {
+  const controls: CalculatorFormControl[] = [
+    {
+      rowIndex: 1,
+      kind: "button-group",
+      label: "Billing",
+      current: "A",
+      options: ["A", "B"],
+    },
+    {
+      rowIndex: 57,
+      kind: "button-group",
+      label: "Required Duration",
+      current: "1",
+      options: ["1", "2", "3"],
+    },
+  ];
+  const d = getDeepestMultiOptionControl(controls);
+  assert.equal(d?.label, "Required Duration");
+});
+
+test("buildCandidateCalculatorActions skips deepest multi-option control by default", () => {
+  const controls: CalculatorFormControl[] = [
+    {
+      rowIndex: 1,
+      kind: "button-group",
+      label: "Billing",
+      current: "A",
+      options: ["A", "B"],
+    },
+    {
+      rowIndex: 57,
+      kind: "button-group",
+      label: "Required Duration",
+      current: "1",
+      options: ["1", "2", "3"],
+    },
+  ];
+  const actions = buildCandidateCalculatorActions(controls);
+  const labels = new Set(actions.map((a) => a.label));
+  assert.equal(labels.has("Required Duration"), false);
+  assert.equal(labels.has("Billing"), true);
+});
+
+test("buildCandidateCalculatorActions includes deepest when HUAWEI_AUTOMATON_EXPLORE_LAST_CONTROL=1", () => {
+  const controls: CalculatorFormControl[] = [
+    {
+      rowIndex: 1,
+      kind: "button-group",
+      label: "Billing",
+      current: "A",
+      options: ["A", "B"],
+    },
+    {
+      rowIndex: 57,
+      kind: "button-group",
+      label: "Required Duration",
+      current: "1",
+      options: ["1", "2", "3"],
+    },
+  ];
+  process.env.HUAWEI_AUTOMATON_EXPLORE_LAST_CONTROL = "1";
+  try {
+    const actions = buildCandidateCalculatorActions(controls);
+    assert.ok(actions.some((a) => a.label === "Required Duration"));
+  } finally {
+    delete process.env.HUAWEI_AUTOMATON_EXPLORE_LAST_CONTROL;
+  }
 });
 
 test("calculatorFormSignature distinguishes checkbox slots on the same row", () => {

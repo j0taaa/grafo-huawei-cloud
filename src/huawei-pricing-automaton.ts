@@ -10,6 +10,7 @@ import {
 } from "./huawei-ecs-calculator-options.js";
 import {
   applyCalculatorFormAction,
+  buildCandidateCalculatorActions,
   extractCalculatorFormControls,
   mapWithConcurrency,
   readCalculatorFormQuickSignature,
@@ -252,19 +253,7 @@ async function buildAutomaton(service: string, url: string): Promise<Automaton> 
     while (queue.length) {
       const signature = queue.shift()!;
       const state = statesBySignature.get(signature)!;
-      const actions: Action[] = [];
-      for (const control of state.controls) {
-        for (const option of control.options) {
-          if (control.current && option === control.current) continue;
-          actions.push({
-            rowIndex: control.rowIndex,
-            kind: control.kind,
-            label: control.label,
-            option,
-            ...(control.kind === "checkbox" ? { checkboxIndex: control.checkboxIndex ?? 0 } : {}),
-          });
-        }
-      }
+      const actions: Action[] = buildCandidateCalculatorActions(state.controls);
 
       console.log(`Exploring ${state.id} with ${state.controls.length} visible controls and ${actions.length} candidate transitions`);
 

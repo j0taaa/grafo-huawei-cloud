@@ -55,6 +55,70 @@ export function calculatorFormSignature(controls: CalculatorFormControl[]): stri
   );
 }
 
+function controlPositionKey(c: CalculatorFormControl): [number, number] {
+  return [c.rowIndex, c.checkboxIndex ?? 0];
+}
+
+function compareControlPosition(a: CalculatorFormControl, b: CalculatorFormControl): number {
+  const ka = controlPositionKey(a);
+  const kb = controlPositionKey(b);
+  return ka[0] !== kb[0] ? ka[0] - kb[0] : ka[1] - kb[1];
+}
+
+/**
+ * Deepest multi-option control (DOM row, then checkbox slot). Changing it typically does not
+ * expose new fields below (e.g. Required Duration on Yearly/Monthly), so BFS can skip branching on it.
+ */
+export function getDeepestMultiOptionControl(
+  controls: CalculatorFormControl[],
+): CalculatorFormControl | null {
+  const multi = controls.filter((c) => c.options.length > 1);
+  if (multi.length === 0) return null;
+  return multi.reduce((best, c) => (compareControlPosition(c, best) > 0 ? c : best));
+}
+
+function shouldExploreDeepestLeafControl(): boolean {
+  return (
+    process.argv.includes("--explore-last-control") ||
+    process.env.HUAWEI_AUTOMATON_EXPLORE_LAST_CONTROL === "1"
+  );
+}
+
+/**
+ * Builds BFS transition list. By default **does not** branch on the deepest multi-option control
+ * (usually the last meaningful row, e.g. Required Duration), to avoid N× blow-up when nothing below changes.
+ * Opt in: `--explore-last-control` or `HUAWEI_AUTOMATON_EXPLORE_LAST_CONTROL=1`.
+ */
+export function buildCandidateCalculatorActions(
+  controls: CalculatorFormControl[],
+): CalculatorFormAction[] {
+  const exploreDeepest = shouldExploreDeepestLeafControl();
+  const skipTarget = exploreDeepest ? null : getDeepestMultiOptionControl(controls);
+
+  const actions: CalculatorFormAction[] = [];
+  for (const control of controls) {
+    if (control.options.length <= 1) continue;
+    if (
+      skipTarget &&
+      control.rowIndex === skipTarget.rowIndex &&
+      (control.checkboxIndex ?? 0) === (skipTarget.checkboxIndex ?? 0)
+    ) {
+      continue;
+    }
+    for (const option of control.options) {
+      if (control.current && option === control.current) continue;
+      actions.push({
+        rowIndex: control.rowIndex,
+        kind: control.kind,
+        label: control.label,
+        option,
+        ...(control.kind === "checkbox" ? { checkboxIndex: control.checkboxIndex ?? 0 } : {}),
+      });
+    }
+  }
+  return actions;
+}
+
 /**
  * Fast DOM fingerprint: button-groups, checkboxes, and readonly select display values.
  * Used to skip redundant full extractions when the UI clearly changed.
