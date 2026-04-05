@@ -177,7 +177,10 @@ async function openCalculatorSession(
   region: string | null,
 ): Promise<Page> {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1200 } });
-  await page.goto(calculatorUrlForService(service), { waitUntil: "domcontentloaded" });
+  await page.goto(calculatorUrlForService(service), {
+    waitUntil: "domcontentloaded",
+    timeout: 90_000,
+  });
   await waitReady(page);
   await setFixedRegion(page, region);
   await page.waitForTimeout(450);
